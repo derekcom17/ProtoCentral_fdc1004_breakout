@@ -40,17 +40,21 @@
 #define FDC1004_MEAS_MAX (0x03)
 #define FDC1004_IS_MEAS(x) (x >= 0 && x <= FDC1004_MEAS_MAX)
 
+#define FDC1004_UPPER_BOUND (0X4000)                   // max readout capacitance
+#define FDC1004_LOWER_BOUND (-1 * FDC1004_UPPER_BOUND) // min readout capacitance
+
 #define FDC_REGISTER (0x0C)
 
-#define ATTOFARADS_UPPER_WORD (457) //number of attofarads for each 8th most lsb (lsb of the upper 16 bit half-word)
-#define FEMTOFARADS_CAPDAC (3028) //number of femtofarads for each lsb of the capdac
+#define PFARADS_UPPER_WORD (457) //number of attofarads for each 8th most lsb (lsb of the upper 16 bit half-word)
+#define PICOFARADS_CAPDAC (3.125) //number of picofarads for each lsb of the capdac. 
+            // Previously: (3028 fF)
 
 /********************************************************************************************************
  * typedefs
  *******************************************************************************************************/
 typedef struct fdc1004_measurement_t
 {
-    int16_t value;
+    int32_t value;
     uint8_t capdac;
 }fdc1004_measurement_t;
 
@@ -61,20 +65,19 @@ class FDC1004
 {
  public:
     FDC1004(uint16_t rate = FDC1004_100HZ);
-    int32_t getCapacitance(uint8_t channel = 1);
+    double  getCapacitance(uint8_t channel = 1);
     uint8_t getRawCapacitance(uint8_t channel, fdc1004_measurement_t * value);
     uint8_t configureMeasurementSingle(uint8_t measurement, uint8_t channel, uint8_t capdac);
     uint8_t triggerSingleMeasurement(uint8_t measurement, uint8_t rate);
     uint8_t readMeasurement(uint8_t measurement, uint16_t * value);
     uint8_t measureChannel(uint8_t channel, uint8_t capdac, uint16_t * value);
-	    uint16_t read16(uint8_t reg);
+	uint16_t read16(uint8_t reg);
 
  private:
     uint8_t _addr;
     uint8_t _rate;
-    uint8_t _last_capdac[4];
+    uint8_t _last_capdac[FDC1004_MEAS_MAX+1]; // One for each measurement
     void write16(uint8_t reg, uint16_t data);
-
 };
 
 #endif

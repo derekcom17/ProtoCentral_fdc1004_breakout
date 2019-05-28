@@ -18,7 +18,7 @@
 //   For information on how to use, visit https://github.com/protocentral/ProtoCentral_fdc1004_breakout
 /////////////////////////////////////////////////////////////////////////////////////////
 
-#include <Protocentral_FDC1004.h>
+#include "FDC1004.h"
 
 #define FDC1004_UPPER_BOUND ((int16_t) 0x4000)
 #define FDC1004_LOWER_BOUND (-1 * FDC1004_UPPER_BOUND)
@@ -32,6 +32,10 @@ FDC1004::FDC1004(uint16_t rate)
 {
   this->_addr = 0b1010000;
   this->_rate = rate;
+  for(uint8_t i=0; i<FDC1004_MEAS_MAX+1; i++)
+  {
+	  this->_last_capdac[i] = 0;
+  }
 }
 
 void FDC1004::write16(uint8_t reg, uint16_t data)
@@ -128,17 +132,61 @@ uint8_t FDC1004::measureChannel(uint8_t channel, uint8_t capdac, uint16_t * valu
   return readMeasurement(measurement, value);
 }
 
+
+/*
+ * gets the capacitance from a channel, and returns the integer value.
+ * adjusts CAPDAC value to find proper range
+ */
+uint8_t FDC1004::getRawCapacitance(uint8_t channel, fdc1004_measurement_t * value)
+{	
+	uint8_t capdacValue = this->_last_capdac[channel];
+	uint16_t result[2];
+	boolean inRange;
+	do // Loop until correct CAPDAC value is found
+	{
+		inRange = true;
+		if(measureChannel(channel, capdacValue, result)) return 1;
+		if((int16_t)result[0] >= FDC1004_UPPER_BOUND) // Capacitance is too big
+		{
+			if(capdacValue < FDC1004_CAPDAC_MAX) // Not yet at max
+			{
+				inRange = false;
+				capdacValue++;
+			}
+		}
+		else if((int16_t)result[0] <= FDC1004_LOWER_BOUND) // Capacitance is too small
+		{
+			if(capdacValue > 0) // Not below minimum
+			{
+				inRange = false;
+				capdacValue--;
+			}
+		}
+		// exit case to avoid potential infinate loop?
+	} while(!inRange);
+	int32_t result_32 = (((uint32_t)result[0]) << 16) | ((uint32_t)result[1]); // Concatinate 
+	result_32 = result_32 >> 8; // Remove 8 lsb (and sign extend.)
+	value->value = result_32; // Save result
+	value->capdac = capdacValue;
+	_last_capdac[channel] = capdacValue; // save capdac value
+}
+
 /**
- *  function to get the capacitance from a channel.
-  */
-int32_t FDC1004::getCapacitance(uint8_t channel)
+ *  function to get the capacitance from a channel. Returns capacitance in picofarads.
+ *  Returns -1.0 in the event of an error.
+ */
+double FDC1004::getCapacitance(uint8_t channel)
 {
     fdc1004_measurement_t value;
     uint8_t result = getRawCapacitance(channel, &value);
-    if (result) return 0x80000000;
+    if (result) return -1.0;
 
-    int32_t capacitance = ((int32_t)ATTOFARADS_UPPER_WORD) * ((int32_t)value.value); //attofarads
-    capacitance /= 1000; //femtofarads
-    capacitance += ((int32_t)FEMTOFARADS_CAPDAC) * ((int32_t)value.capdac);
+    //int32_t capacitance = ((int32_t)ATTOFARADS_UPPER_WORD) * ((int32_t)value.value); //attofarads
+    //capacitance /= 1000; //femtofarads
+    //capacitance += ((int32_t)FEMTOFARADS_CAPDAC) * ((int32_t)value.capdac);
+    //return capacitance;
+	
+	double capacitance = (double)value.value / 524288.0; // [pF] (2^19 = 524288)
+    capacitance += PICOFARADS_CAPDAC * ((double)value.capdac);
     return capacitance;
 }
